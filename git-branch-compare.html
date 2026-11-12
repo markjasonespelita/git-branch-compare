@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branch Compare</title>
+<style>
+:root{
+  --bg:#f6f8fa;--panel:#fff;--text:#1f2328;--muted:#656d76;--border:#d0d7de;
+  --add-bg:#e6ffec;--add-hl:#abf2bc;--del-bg:#ffebe9;--del-hl:#ffc1ba;
+  --empty:#f6f8fa;--hunk:#ddf4ff;--accent:#0969da;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0d1117;--panel:#161b22;--text:#e6edf3;--muted:#8b949e;--border:#30363d;
+  --add-bg:#12261e;--add-hl:#1f6f3a;--del-bg:#2d1618;--del-hl:#8e2a30;
+  --empty:#0d1117;--hunk:#12233a;--accent:#58a6ff;
+}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;display:flex;flex-direction:column}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border)}
+.bar .sp{flex:1}
+select,input,button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:5px 9px}
+select{max-width:220px}
+button{cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.seg{display:inline-flex}
+.seg button{border-radius:0}
+.seg button:first-child{border-radius:6px 0 0 6px}
+.seg button:last-child{border-radius:0 6px 6px 0;border-left:0}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+label.chk{display:flex;gap:5px;align-items:center;color:var(--muted)}
+.main{flex:1;display:flex;min-height:0}
+aside{width:300px;min-width:200px;border-right:1px solid var(--border);background:var(--panel);display:flex;flex-direction:column}
+aside input{margin:10px;width:calc(100% - 20px)}
+#summary{padding:0 12px 8px;color:var(--muted);font-size:12px}
+#list{overflow:auto;flex:1}
+#list a{display:flex;gap:8px;align-items:center;padding:5px 12px;color:var(--text);text-decoration:none;font-size:13px;border-top:1px solid transparent}
+#list a:hover{background:var(--bg)}
+#list .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.badge{display:inline-block;width:18px;text-align:center;border-radius:4px;font:600 11px var(--mono);color:#fff;padding:1px 0}
+.A{background:#2da44e}.M{background:#bf8700}.D{background:#cf222e}.R{background:#8250df}
+.st{font:12px var(--mono);white-space:nowrap}.st .p{color:#2da44e}.st .m{color:#cf222e}
+#diff{flex:1;overflow:auto;padding:14px}
+.msg{color:var(--muted);text-align:center;margin:60px 20px}
+.msg.err{color:#cf222e}
+details.file{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;overflow:hidden}
+details.file>summary{cursor:pointer;padding:8px 12px;display:flex;gap:10px;align-items:center;position:sticky;top:-14px;background:var(--panel);z-index:2;border-bottom:1px solid transparent}
+details.file[open]>summary{border-bottom-color:var(--border)}
+summary .path{font:13px var(--mono);flex:1;word-break:break-all}
+table.d{width:100%;border-collapse:collapse;table-layout:fixed;font:12px/1.5 var(--mono)}
+table.d td{padding:0 8px;vertical-align:top;white-space:pre-wrap;word-break:break-all}
+td.ln{width:50px;text-align:right;color:var(--muted);user-select:none;border-right:1px solid var(--border);padding:0 6px}
+table.split td.cd+td.ln{border-left:1px solid var(--border)}
+td.add{background:var(--add-bg)}td.del{background:var(--del-bg)}td.empty{background:var(--empty)}
+td.ln.add{background:var(--add-bg)}td.ln.del{background:var(--del-bg)}td.ln.empty{background:var(--empty)}
+td.add mark{background:var(--add-hl)}td.del mark{background:var(--del-hl)}
+mark{color:inherit;border-radius:2px}
+tr.hh td{background:var(--hunk);color:var(--muted);padding:3px 10px}
+.bin{padding:14px;color:var(--muted)}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;width:min(720px,92vw);padding:16px}
+dialog::backdrop{background:#0008}
+dialog textarea{width:100%;height:260px;font:12px var(--mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;resize:vertical}
+dialog .row{display:flex;gap:8px;margin-top:10px;align-items:center}
+@media (max-width:800px){aside{display:none}}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <select id="base" title="Base branch"></select>
+  <button id="swap" title="Swap sides">⇄</button>
+  <select id="head" title="Compare branch"></select>
+  <select id="mode" title="Diff type">
+    <option value="...">Changes on compare branch (A...B)</option>
+    <option value="..">Direct difference (A..B)</option>
+  </select>
+  <select id="ctx" title="Context lines">
+    <option value="3">3 lines context</option>
+    <option value="10">10 lines</option>
+    <option value="99999">Full file</option>
+  </select>
+  <label class="chk"><input type="checkbox" id="ws"> ignore whitespace</label>
+  <button class="primary" id="go">Compare</button>
+  <span class="sp"></span>
+  <div class="seg">
+    <button id="vSplit" class="on">Split</button><button id="vUni">Unified</button>
+  </div>
+  <button id="paste">Paste diff…</button>
+</div>
+
+<div class="main">
+  <aside>
+    <input id="filter" placeholder="Filter files…">
+    <div id="summary"></div>
+    <div id="list"></div>
+  </aside>
+  <section id="diff"><div class="msg">Pick two branches and press <b>Compare</b>.</div></section>
+</div>
+
+<dialog id="dlg">
+  <h3 style="margin-top:0">Paste or load a diff</h3>
+  <p style="color:var(--muted);margin-top:0">Run <code>git diff main...my-branch &gt; changes.diff</code> and load it here. Works without the PHP helper.</p>
+  <textarea id="raw" placeholder="diff --git a/file b/file …"></textarea>
+  <div class="row">
+    <input type="file" id="file" accept=".diff,.patch,.txt">
+    <span style="flex:1"></span>
+    <button id="close">Cancel</button>
+    <button class="primary" id="render">Render</button>
+  </div>
+</dialog>
+
+<script>
+const API = 'git-branch-compare.php';   // change if you put the PHP file elsewhere
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let files = [], view = 'split';
+
+async function api(params) {
+  const r = await fetch(API + '?' + new URLSearchParams(params));
+  let j; try { j = await r.json(); } catch { throw new Error('Backend not reachable. Open this page through PHP (e.g. php -S localhost:8080) or use "Paste diff…".'); }
+  if (!r.ok || j.error) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function msg(html, err) { $('#diff').innerHTML = `<div class="msg${err ? ' err' : ''}">${html}</div>`; }
+
+async function init() {
+  try {
+    const j = await api({ action: 'branches' });
+    const opts = j.branches.map(b => `<option>${esc(b)}</option>`).join('');
+    $('#base').innerHTML = opts; $('#head').innerHTML = opts;
+    const def = ['main', 'master', 'origin/main', 'origin/master', 'develop'].find(b => j.branches.includes(b));
+    if (def) $('#base').value = def;
+    if (j.current) $('#head').value = j.current;
+    document.title = 'Branch Compare – ' + j.repo;
+  } catch (e) { msg(esc(e.message), true); }
+}
+
+async function compare() {
+  const base = $('#base').value, head = $('#head').value;
+  if (!base || !head) return;
+  msg('Loading diff…');
+  try {
+    const j = await api({ action: 'diff', base, head, mode: $('#mode').value, ctx: $('#ctx').value, ws: $('#ws').checked ? 1 : 0 });
+    load(j.diff);
+  } catch (e) { msg(esc(e.message), true); }
+}
+
+/* ---------- diff parsing ---------- */
+function parseDiff(text) {
+  const out = []; let f = null, h = null, o = 0, n = 0;
+  for (const line of text.split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      const m = line.match(/^diff --git a\/(.*) b\/(.*)$/);
+      f = { oldPath: m ? m[1] : '', newPath: m ? m[2] : '', status: 'M', hunks: [], add: 0, del: 0, binary: false };
+      out.push(f); h = null; continue;
+    }
+    if (!f) continue;
+    const hm = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
+    if (hm) { o = +hm[1]; n = +hm[2]; h = { head: line, lines: [] }; f.hunks.push(h); continue; }
+    if (!h) {
+      if (line.startsWith('new file mode')) f.status = 'A';
+      else if (line.startsWith('deleted file mode')) f.status = 'D';
+      else if (line.startsWith('rename from ')) { f.status = 'R'; f.oldPath = line.slice(12); }
+      else if (line.startsWith('rename to ')) f.newPath = line.slice(10);
+      else if (/^(Binary files|GIT binary patch)/.test(line)) f.binary = true;
+      continue;
+    }
+    const c = line[0], t = line.slice(1);
+    if (c === '+') { h.lines.push({ t: '+', text: t, n: n++ }); f.add++; }
+    else if (c === '-') { h.lines.push({ t: '-', text: t, o: o++ }); f.del++; }
+    else if (c === ' ') h.lines.push({ t: ' ', text: t, o: o++, n: n++ });
+  }
+  return out;
+}
+
+function load(text) {
+  files = parseDiff(text);
+  const add = files.reduce((a, f) => a + f.add, 0), del = files.reduce((a, f) => a + f.del, 0);
+  $('#summary').textContent = `${files.length} files changed, +${add} −${del}`;
+  $('#list').innerHTML = files.map((f, i) => `
+    <a href="#f${i}" data-i="${i}" data-n="${esc(f.newPath.toLowerCase())}">
+      <span class="badge ${f.status}">${f.status}</span>
+      <span class="nm" title="${esc(f.newPath)}">&lrm;${esc(f.newPath)}</span>
+      <span class="st"><span class="p">+${f.add}</span> <span class="m">−${f.del}</span></span>
+    </a>`).join('');
+  renderFiles();
+}
+
+/* ---------- rendering ---------- */
+function hl(a, b) {
+  const m = Math.min(a.length, b.length); let p = 0, s = 0;
+  while (p < m && a[p] === b[p]) p++;
+  while (s < m - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+  if (p + s === 0) return [esc(a), esc(b)];
+  const w = t => esc(t.slice(0, p)) + (t.length - p - s > 0 ? '<mark>' + esc(t.slice(p, t.length - s)) + '</mark>' : '') + esc(t.slice(t.length - s));
+  return [w(a), w(b)];
+}
+
+function splitRows(lines) {
+  const rows = []; let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.t === ' ') { rows.push({ l, r: l }); i++; continue; }
+    const d = [], a = [];
+    while (i < lines.length && lines[i].t === '-') d.push(lines[i++]);
+    while (i < lines.length && lines[i].t === '+') a.push(lines[i++]);
+    for (let k = 0; k < Math.max(d.length, a.length); k++) rows.push({ l: d[k], r: a[k] });
+  }
+  return rows;
+}
+
+function tableFor(f) {
+  if (f.binary && !f.hunks.length) return '<div class="bin">Binary file not shown.</div>';
+  if (!f.hunks.length) return '<div class="bin">No content changes (mode change or empty file).</div>';
+  let h = '';
+  if (view === 'split') {
+    h = '<table class="d split"><colgroup><col style="width:50px"><col><col style="width:50px"><col></colgroup>';
+    for (const hk of f.hunks) {
+      h += `<tr class="hh"><td colspan="4">${esc(hk.head)}</td></tr>`;
+      for (const { l, r } of splitRows(hk.lines)) {
+        let lc = l ? esc(l.text) : '', rc = r ? esc(r.text) : '';
+        if (l && r && l.t === '-' && r.t === '+') [lc, rc] = hl(l.text, r.text);
+        const lk = l ? (l.t === '-' ? 'del' : '') : 'empty', rk = r ? (r.t === '+' ? 'add' : '') : 'empty';
+        h += `<tr><td class="ln ${lk}">${l ? l.o : ''}</td><td class="cd ${lk}">${lc}</td>` +
+             `<td class="ln ${rk}">${r ? r.n : ''}</td><td class="cd ${rk}">${rc}</td></tr>`;
+      }
+    }
+  } else {
+    h = '<table class="d"><colgroup><col style="width:50px"><col style="width:50px"><col></colgroup>';
+    for (const hk of f.hunks) {
+      h += `<tr class="hh"><td colspan="3">${esc(hk.head)}</td></tr>`;
+      for (const l of hk.lines) {
+        const k = l.t === '+' ? 'add' : l.t === '-' ? 'del' : '';
+        h += `<tr><td class="ln ${k}">${l.o ?? ''}</td><td class="ln ${k}">${l.n ?? ''}</td><td class="cd ${k}">${l.t === ' ' ? ' ' : l.t}${esc(l.text)}</td></tr>`;
+      }
+    }
+  }
+  return h + '</table>';
+}
+
+function renderFiles() {
+  if (!files.length) return msg('No differences between these branches.');
+  const big = files.length > 25;
+  $('#diff').innerHTML = files.map((f, i) => {
+    const name = f.status === 'R' ? `${esc(f.oldPath)} → ${esc(f.newPath)}` : esc(f.newPath);
+    return `<details class="file" id="f${i}" data-i="${i}" ${big ? '' : 'open'}>
+      <summary><span class="badge ${f.status}">${f.status}</span><span class="path">${name}</span>
+      <span class="st"><span class="p">+${f.add}</span> <span class="m">−${f.del}</span></span></summary>
+      <div class="body"></div></details>`;
+  }).join('');
+  document.querySelectorAll('details.file').forEach(d => {
+    const fill = () => { const b = d.querySelector('.body'); if (d.open && !b.dataset.done) { b.innerHTML = tableFor(files[d.dataset.i]); b.dataset.done = 1; } };
+    d.addEventListener('toggle', fill); fill();
+  });
+}
+
+/* ---------- events ---------- */
+$('#go').onclick = compare;
+$('#swap').onclick = () => { const a = $('#base').value; $('#base').value = $('#head').value; $('#head').value = a; };
+$('#vSplit').onclick = () => setView('split');
+$('#vUni').onclick = () => setView('uni');
+function setView(v) {
+  view = v; $('#vSplit').classList.toggle('on', v === 'split'); $('#vUni').classList.toggle('on', v === 'uni');
+  if (files.length) renderFiles();
+}
+$('#filter').oninput = e => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#list a').forEach(a => a.style.display = a.dataset.n.includes(q) ? '' : 'none');
+};
+$('#list').onclick = e => {
+  const a = e.target.closest('a'); if (!a) return; e.preventDefault();
+  const d = document.getElementById('f' + a.dataset.i); d.open = true; d.scrollIntoView({ block: 'start' });
+};
+$('#paste').onclick = () => $('#dlg').showModal();
+$('#close').onclick = () => $('#dlg').close();
+$('#render').onclick = () => { load($('#raw').value); $('#dlg').close(); };
+$('#file').onchange = async e => { const f = e.target.files[0]; if (f) $('#raw').value = await f.text(); };
+
+init();
+</script>
+</body>
+</html>
